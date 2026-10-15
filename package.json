@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "projects": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/projects.ts",
+    "test": "node --experimental-strip-types --test tests/graph.test.ts",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:http": "node --experimental-strip-types --test tests/http.test.ts"
   },
   "dependencies": {
     "next": "16.4.1",
@@ -22,5 +26,9 @@
     "eslint-config-next": "16.4.1",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "type": "module"
 }
