@@ -96,3 +96,7 @@ Mocks vervangen geen tenanttest. Controleer na het invullen van echte credential
 4. Voer de CLI lokaal uit met dezelfde drive, hoofdmap en projectlinksleutel als productie en de productie-`APP_BASE_URL`.
 
 De server moet `login.microsoftonline.com`, `graph.microsoft.com` en de door Microsoft uitgegeven OneDrive/SharePoint-downloadhost van de tenant kunnen bereiken. Er zijn geen echte credentials of klantdocumenten meegeleverd. Let bij grote bestanden op de actuele Vercel Functions-limieten voor streaming, duur en verkeer. Test representatieve grote PDF's op het gekozen abonnement; deze MVP omzeilt hostinglimieten niet met publieke downloadlinks.
+
+## Deelbare demonstratie
+
+Open `/zhq17sD-hJ324XCT1yKvb2IEsErxs_4c` op het gedeployde domein. Deze vaste voorbeeldlink werkt zonder Microsoft-configuratie en toont uitsluitend fictieve PDF's en een schematische afbeelding. Mappen, previews en downloads werken met dezelfde UI als echte projecten. Er is een duidelijke demonstratiemelding. De bestanden in `public/demo` zijn openbare voorbeelden en bevatten geen klantgegevens. De demo verleent geen toegang tot OneDrive en verschijnt niet in de CLI-projectenlijst. Verwijder de demo-integratie en `public/demo` wanneer deze niet meer gewenst is.

@@ -1,3 +1,4 @@
+import { DEMO_PROJECT_ID, demoItem, demoContent } from "@/lib/demo";
 import {
   authorizedItem,
   fileContent,
@@ -21,12 +22,17 @@ export async function GET(
   });
   try {
     const { projectId, itemId } = await context.params;
-    const item = await authorizedItem(await resolveProject(projectId), itemId);
+    const isDemo = projectId === DEMO_PROJECT_ID;
+    const item = isDemo
+      ? demoItem(itemId)
+      : await authorizedItem(await resolveProject(projectId), itemId);
     if (!item.file) throw new PortalError(404, "Bestand niet gevonden.");
     const inline =
       new URL(request.url).searchParams.get("preview") === "1" &&
       previewType(item);
-    const upstream = await fileContent(item, request.headers.get("range"));
+    const upstream = isDemo
+      ? await demoContent(itemId)
+      : await fileContent(item, request.headers.get("range"));
     headers.set("Content-Type", inline || "application/octet-stream");
     headers.set(
       "Content-Disposition",

@@ -9,6 +9,8 @@ import {
   resolveProject,
 } from "@/lib/graph";
 
+import { DEMO_PROJECT_ID, demoProject } from "@/lib/demo";
+
 export const dynamic = "force-dynamic";
 async function loadProject({
   params,
@@ -20,6 +22,7 @@ async function loadProject({
   const { projectId } = await params;
   const query = await searchParams;
   try {
+    if (projectId === DEMO_PROJECT_ID) return demoProject(query);
     const project = await resolveProject(projectId);
     const folder = query.folder
       ? await authorizedItem(project, query.folder)
@@ -33,7 +36,7 @@ async function loadProject({
     const preview = query.preview
       ? await authorizedItem(project, query.preview)
       : undefined;
-    return { project, folder, files, preview };
+    return { project, folder, files, preview, isDemo: false };
   } catch (error) {
     return { error: publicError(error) };
   }
@@ -60,6 +63,12 @@ export default async function ProjectPage(props: {
     folder.id === project.id ? "" : `folder=${encodeURIComponent(folder.id)}&`;
   return (
     <main className="mx-auto max-w-4xl p-5 sm:p-10">
+      {data.isDemo && (
+        <p className="mb-5 rounded border border-amber-200 bg-amber-50 p-3 text-sm">
+          Demonstratie met fictieve documenten. Dit project is niet gekoppeld
+          aan OneDrive.
+        </p>
+      )}
       <h1 className="mb-6 text-2xl font-semibold">{project.name}</h1>
       {folder.id !== project.id && (
         <nav className="mb-5 flex flex-wrap gap-5">
