@@ -22,11 +22,99 @@ function required(name: string) {
     throw new PortalError(503, "Het portaal is nog niet geconfigureerd.");
   return value;
 }
-function config() {
-  return {
-    drive: required("ONEDRIVE_DRIVE_ID"),
-    root: required("ONEDRIVE_ROOT_FOLDER_ID"),
-  };
+type DriveConfig = { drive: string; root: string };
+
+// Only Microsoft Graph is contacted. The supplied browser URL is never fetched.
+export function parseFolderUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname.endsWith(".sharepoint.com") ||
+      url.username ||
+      url.password ||
+      url.port
+    )
+      throw new Error();
+    const folderPath = (
+      url.searchParams.get("id") ?? decodeURIComponent(url.pathname)
+    ).replace(/\/+$/, "");
+    if (folderPath.split("/").some((segment) => [".", ".."].includes(segment)))
+      throw new Error();
+    const match = folderPath.match(/^\/(personal|sites|teams)\/[^/]+(?=\/)/);
+    if (!match || folderPath.includes("\\")) throw new Error();
+    return { hostname: url.hostname, sitePath: match[0], folderPath };
+  } catch {
+    throw new PortalError(
+      503,
+      "Stel een geldig zakelijk OneDrive- of SharePoint-mapadres in bij ONEDRIVE_FOLDER_URL.",
+    );
+  }
+}
+let folderCache: { url: string; until: number; value: DriveConfig } | undefined;
+async function config(): Promise<DriveConfig> {
+  const drive = process.env.ONEDRIVE_DRIVE_ID?.trim();
+  const root = process.env.ONEDRIVE_ROOT_FOLDER_ID?.trim();
+  if (drive && root) return { drive, root };
+  if (drive || root)
+    throw new PortalError(
+      503,
+      "Vul beide OneDrive-ID's in of gebruik uitsluitend ONEDRIVE_FOLDER_URL.",
+    );
+  const url = required("ONEDRIVE_FOLDER_URL");
+  if (folderCache?.url === url && Date.now() < folderCache.until)
+    return folderCache.value;
+  const location = parseFolderUrl(url);
+  const encodedPath = (path: string) => path.split("/").map(enc).join("/");
+  try {
+    const site = await (
+      await graphResponse(
+        `/sites/${location.hostname}:${encodedPath(location.sitePath)}?$select=id`,
+      )
+    ).json();
+    if (typeof site.id !== "string") throw new Error();
+    const library = await (
+      await graphResponse(`/sites/${enc(site.id)}/drive?$select=id,webUrl`)
+    ).json();
+    if (typeof library.id !== "string" || typeof library.webUrl !== "string")
+      throw new Error();
+    const libraryUrl = new URL(library.webUrl);
+    const libraryPath = decodeURIComponent(libraryUrl.pathname).replace(
+      /\/+$/,
+      "",
+    );
+    if (
+      libraryUrl.hostname !== location.hostname ||
+      !location.folderPath.startsWith(libraryPath + "/")
+    ) {
+      throw new PortalError(
+        503,
+        "De ingestelde map moet binnen de standaarddocumentbibliotheek van deze site liggen.",
+      );
+    }
+    const relativePath = location.folderPath.slice(libraryPath.length + 1);
+    const folder: Item = await (
+      await graphResponse(
+        `/drives/${enc(library.id)}/root:/${encodedPath(relativePath)}?$select=id,folder,remoteItem`,
+      )
+    ).json();
+    if (!folder.folder || folder.remoteItem || typeof folder.id !== "string")
+      throw new Error();
+    const value = { drive: library.id, root: folder.id };
+    folderCache = { url, until: Date.now() + 60_000, value };
+    return value;
+  } catch (error) {
+    if (
+      error instanceof PortalError &&
+      error.status === 503 &&
+      error.message.includes("standaarddocumentbibliotheek")
+    )
+      throw error;
+    throw new PortalError(
+      503,
+      "De ingestelde OneDrive-map kan niet worden geopend. Controleer het mapadres, de Microsoft 365-tenant en de toegekende leesrechten.",
+    );
+  }
 }
 const enc = encodeURIComponent;
 let token: { value: string; until: number } | undefined;
@@ -81,20 +169,20 @@ async function graphResponse(path: string) {
     );
   return response;
 }
-function itemPath(id: string) {
-  return `/drives/${enc(config().drive)}/items/${enc(id)}`;
+function itemPath(id: string, drive: string) {
+  return `/drives/${enc(drive)}/items/${enc(id)}`;
 }
 export async function getItem(id: string): Promise<Item> {
   return (
     await graphResponse(
-      itemPath(id) +
+      itemPath(id, (await config()).drive) +
         "?$select=id,name,size,folder,file,parentReference,remoteItem",
     )
   ).json();
 }
 export async function children(id: string): Promise<Item[]> {
   let next: string | undefined =
-    itemPath(id) +
+    itemPath(id, (await config()).drive) +
     "/children?$select=id,name,size,folder,file,parentReference,remoteItem&$top=200";
   const result: Item[] = [];
   while (next) {
@@ -104,7 +192,10 @@ export async function children(id: string): Promise<Item[]> {
   }
   return result;
 }
-export function projectId(folderId: string) {
+export function projectId(
+  folderId: string,
+  driveId = required("ONEDRIVE_DRIVE_ID"),
+) {
   const secret = required("PROJECT_LINK_SECRET");
   if (Buffer.byteLength(secret) < 32)
     throw new PortalError(
@@ -112,13 +203,17 @@ export function projectId(folderId: string) {
       "De projectlinksleutel moet minstens 32 bytes bevatten.",
     );
   return createHmac("sha256", secret)
-    .update(`${config().drive}:${folderId}`)
+    .update(`${driveId}:${folderId}`)
     .digest("base64url");
 }
 export async function projects() {
-  return (await children(config().root))
+  const location = await config();
+  return (await children(location.root))
     .filter((item) => item.folder)
-    .map((item) => ({ ...item, projectId: projectId(item.id) }));
+    .map((item) => ({
+      ...item,
+      projectId: projectId(item.id, location.drive),
+    }));
 }
 export async function resolveProject(id: string) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(id))
@@ -138,6 +233,7 @@ export async function resolveProject(id: string) {
 }
 // Never trust a client-supplied item ID: follow its real ancestry in the configured drive.
 export async function authorizedItem(project: Item, id: string): Promise<Item> {
+  const location = await config();
   const original = await getItem(id);
   let current = original;
   const visited = new Set<string>();
@@ -145,14 +241,14 @@ export async function authorizedItem(project: Item, id: string): Promise<Item> {
     if (
       current.remoteItem ||
       (current.parentReference?.driveId &&
-        current.parentReference.driveId !== config().drive)
+        current.parentReference.driveId !== location.drive)
     )
       break;
     if (current.id === project.id) return original;
     if (
       visited.has(current.id) ||
       !current.parentReference?.id ||
-      current.id === config().root
+      current.id === location.root
     )
       break;
     visited.add(current.id);
@@ -178,7 +274,9 @@ export function previewType(item: Item) {
     : undefined;
 }
 export async function fileContent(item: Item, range: string | null) {
-  const response = await graphResponse(itemPath(item.id) + "/content");
+  const response = await graphResponse(
+    itemPath(item.id, (await config()).drive) + "/content",
+  );
   if (response.status !== 302) return response;
   const location = response.headers.get("location");
   if (!location || new URL(location).protocol !== "https:")

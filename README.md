@@ -20,12 +20,29 @@ Configuratie:
 | `AZURE_TENANT_ID` | Directory-ID van de Microsoft 365-tenant |
 | `AZURE_CLIENT_ID` | Application/client-ID van de Entra-app |
 | `AZURE_CLIENT_SECRET` | Secretwaarde van die app; niet het secret-ID |
+| `ONEDRIVE_FOLDER_URL` | Optioneel: volledig zakelijk browseradres van de hoofdmap; zie automatische ontdekking hieronder |
 | `ONEDRIVE_DRIVE_ID` | ID van de zakelijke OneDrive-drive |
 | `ONEDRIVE_ROOT_FOLDER_ID` | Item-ID van de hoofdmap, bijvoorbeeld Klantenportaal |
 | `PROJECT_LINK_SECRET` | Vaste geheime willekeurige sleutel van minstens 32 bytes; genereer met `openssl rand -hex 32` |
 | `APP_BASE_URL` | Publieke oorsprong, bijvoorbeeld `https://app.domein.nl`; voor CLI-links |
 
 Alle variabelen blijven server-side. Gebruik nooit het prefix `NEXT_PUBLIC_` voor deze waarden.
+
+## Hoofdmap instellen met het browseradres
+
+Als alternatief voor de twee ID's kunt u in Vercel **`ONEDRIVE_FOLDER_URL`** invullen met het volledige adres van de hoofdmap uit de OneDrive-browser. Bijvoorbeeld (fictief):
+
+```text
+https://example-my.sharepoint.com/my?id=%2Fpersonal%2Farchitect_example_nl%2FDocuments%2FApp
+```
+
+Laat bij deze optie `ONEDRIVE_DRIVE_ID` en `ONEDRIVE_ROOT_FOLDER_ID` leeg of verwijder ze. Twee ingevulde ID's hebben voorrang; één losse ID is een configuratiefout. Redeploy na het wijzigen van Vercel-variabelen. `APP_BASE_URL` is het publieke appdomein, niet het OneDrive-adres.
+
+De server bepaalt via Graph de site, de standaarddocumentbibliotheek en de hoofdmap. Er zijn geen interactieve gebruikersaanmeldingen of `/me`-aanvragen. Zowel de OneDrive-weergave met `?id=` als directe mapadressen onder `/personal/`, `/sites/` en `/teams/` worden ondersteund; alleen HTTPS op `*.sharepoint.com`. Anonieme deel-URL's, persoonlijke OneDrive en andere documentbibliotheken worden niet ondersteund. Het ingestelde browseradres wordt nooit rechtstreeks opgehaald. Alleen de gevonden ID's worden maximaal 60 seconden in het proces onthouden; projectinhoud wordt steeds opnieuw gelezen. Houd het hoofdmapadres actueel als de hoofdmap zelf wordt hernoemd. Projectlinks blijven gelijk zolang drive-ID, projectmap-ID en de serversleutel gelijk blijven.
+
+**Rechten blijven een vereiste.** Automatische ontdekking vraagt site- en bibliotheekmetadata op. Alleen `Files.SelectedOperations.Selected` met een maptoekenning is daarvoor niet voldoende. Voor deze optie moet een beheerder expliciet **`Sites.Selected` application permission**, admin consent én een **`read`-toekenning op de betreffende site** instellen. Bij OneDrive gaat het om de persoonlijke zakelijke SharePoint-site van de eigenaar. Dat geeft de runtime-app ruimere leesrechten op die geselecteerde site dan alleen de map. Beoordeel die verruiming bewust; de portal zelf begrenst aanvragen nog steeds tot de ingestelde hoofdmap en het gekozen project. Zonder site-toekenning kan automatische ontdekking niet werken. De app vraagt zelf geen extra rechten aan, maakt niets publiek en voert geen schrijfbewerkingen uit.
+
+Voor de striktste toegang tot alleen de hoofdmap blijft de configuratie met beide ID's en `Files.SelectedOperations.Selected` hieronder de aanbevolen optie. Een verkeerde tenant, ontbrekende admin consent of ontbrekende read-toekenning wordt niet opgelost door alleen een URL in te vullen. Site-toekenningen worden beheerd via een afzonderlijke beheercontext, bijvoorbeeld `POST /sites/{site-id}/permissions` met `roles: ["read"]` en `grantedToIdentities: [{"application": {"id": "{client-id}"}}]`; beheerrechten horen nooit in de portal-app.
 
 ## Microsoft Entra en Microsoft Graph
 
@@ -34,7 +51,7 @@ Deze implementatie gebruikt **OneDrive for Business binnen Microsoft 365**, met 
 1. Maak in Microsoft Entra ID een single-tenant appregistratie. Een redirect-URI is voor client credentials niet nodig. Noteer tenant-ID en client-ID.
 2. Maak onder Certificates & secrets een client secret; bewaar de waarde veilig en plan rotatie vóór de vervaldatum.
 3. Voeg Microsoft Graph **Application permission `Files.SelectedOperations.Selected`** toe en laat een tenantbeheerder admin consent geven. Dit geeft op zichzelf nog geen toegang tot bestanden. Voeg géén `Files.Read.All`, `Files.ReadWrite.All` of andere tenantbrede rechten toe aan de runtime-app.
-4. Zoek met een **afzonderlijke beheercontext** de drive-ID (`GET /users/{user-id}/drive`) en het item-ID van Klantenportaal (`GET /drives/{drive-id}/root:/Klantenportaal`). Dit doet de portal-app niet: met geselecteerde rechten kan deze niet zomaar alle gebruikers/drives ontdekken. Gebruik `/me` niet met app-only authenticatie.
+4. Zoek met een **afzonderlijke beheercontext** de drive-ID (`GET /users/{user-id}/drive`) en het item-ID van Klantenportaal (`GET /drives/{drive-id}/root:/Klantenportaal`). Bij deze variant doet de portal-app geen ontdekking: met alleen mapgebonden rechten kan deze niet zomaar alle gebruikers/drives ontdekken. Gebruik `/me` niet met app-only authenticatie.
 5. Ken die runtime-app een expliciete **read**-toekenning op de hoofdmap toe. Een beheerder doet dit eenmalig via Graph, met een apart bevoegd beheeraccount of provisioning-app. De beheercontext moet de door Microsoft vereiste rechten voor het beheren van deze toekenning hebben (bijvoorbeeld `Sites.FullControl.All` application met admin consent); bewaar deze beheercredentials nooit in de portal. Voorbeeld:
 
 ```http

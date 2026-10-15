@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "projects": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/projects.ts",
-    "test": "node --experimental-strip-types --test tests/graph.test.ts",
+    "test": "node --experimental-strip-types --test tests/graph.test.ts tests/folder-url.test.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "test:http": "node --experimental-strip-types --test tests/*http.test.ts"
   },
