@@ -41,7 +41,28 @@ test("demo works without Microsoft credentials, with folders, previews and real 
     assert.ok(ready, log);
     const page = await fetch(base);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /Demonstratie met fictieve documenten/);
+    const html = await page.text();
+    assert.match(html, /Demonstratie met fictieve documenten/);
+    const projectPath = new URL(base).pathname;
+    assert.ok(html.includes(`href="${projectPath}/manifest.webmanifest"`));
+    assert.ok(!html.includes('href="/manifest.webmanifest"'));
+    const installedApp = await fetch(base + "/manifest.webmanifest");
+    assert.equal(installedApp.status, 200);
+    const manifest = await installedApp.json();
+    assert.equal(manifest.start_url, projectPath);
+    assert.equal(manifest.id, projectPath);
+    assert.equal(manifest.display, "standalone");
+    const nestedHtml = await (await fetch(base + "?folder=tekeningen")).text();
+    assert.ok(
+      nestedHtml.includes(`href="${projectPath}/manifest.webmanifest"`),
+    );
+    const launched = await fetch(new URL(manifest.start_url, base));
+    assert.match(await launched.text(), /Demonstratie met fictieve documenten/);
+    assert.equal(
+      (await fetch("http://localhost:3220/invalid/manifest.webmanifest"))
+        .status,
+      404,
+    );
     const folder = await fetch(base + "?folder=tekeningen");
     assert.match(await folder.text(), /Begane grond.pdf/);
     const pdfPage = await fetch(

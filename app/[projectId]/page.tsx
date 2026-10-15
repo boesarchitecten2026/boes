@@ -1,4 +1,5 @@
 /* eslint-disable @next/next/no-img-element -- Same-origin authorized streaming endpoint; no image optimizer cache. */
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   authorizedItem,
@@ -12,6 +13,14 @@ import {
 import { DEMO_PROJECT_ID, demoProject } from "@/lib/demo";
 
 export const dynamic = "force-dynamic";
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ projectId: string }>;
+}): Promise<Metadata> {
+  const { projectId } = await params;
+  return { manifest: `/${encodeURIComponent(projectId)}/manifest.webmanifest` };
+}
 async function loadProject({
   params,
   searchParams,

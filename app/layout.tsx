@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 export const metadata: Metadata = {
+  manifest: "/manifest.webmanifest",
   title: "Klantenportaal",
   description: "Uw projectdocumenten",
   robots: { index: false, follow: false },
